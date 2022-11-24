@@ -1,0 +1,14 @@
+Resources:
+  GDD52U19:
+    Type: 'AWS::GuardDuty::Detector'
+    Properties:
+      DataSources:
+        S3Logs:
+            Enable: true
+        Kubernetes:
+            AuditLogs:
+                Enable: false
+        MalwareProtection:
+            ScanEc2InstanceWithFindings:
+                EbsVolumes: false
+      Enable: true

@@ -1,0 +1,41 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "EventBridge Cross-Region Routing (Sender)"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "General Information"
+        Parameters:
+          - SystemName
+          - EnvironmentName
+      - Label:
+          default: "EventBridge Target Reference"
+        Parameters:
+          - TargetEventBusARN
+          - IAMRoleARN
+
+Parameters:
+  SystemName:
+    Type: String
+  TargetEventBusARN:
+    Type: String
+  IAMRoleARN:
+    Type: String
+
+Resources:
+  SenderEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${SystemName}-${AWS::Region}-eventbridge-eventrule-sender"
+      Description: "Send events to receiver EventBridge"
+      EventPattern: |
+        {
+          "source": ["aws.guardduty"],
+          "detail-type": ["GuardDuty Finding"]
+        }
+      Targets:
+        - Id: "ReceiverEventBus"
+          Arn: !Ref TargetEventBusARN
+          RoleArn: !Ref IAMRoleARN

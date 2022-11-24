@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  ProjectName:
+    Description: Project Name
+    Type: String
+  Severity:
+    Description: Severity level that you want to detect(Default is 7 = High)
+    Type: Number
+    Default: 7
+
+Resources:
+  # ------------------------------------------------------------#
+  # EventBridge
+  # ------------------------------------------------------------#
+  # Custom Event Bus
+  EventsEventBus1:
+    Type: "AWS::Events::EventBus"
+    Properties:
+      Name: !Sub ${ProjectName}-${AWS::Region}-eventbridge-eventbus-receiver
+
+  # Event Rule
+  EventsRule1:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Name: !Sub ${ProjectName}-${AWS::Region}-eventbridge-eventrule-receiver
+      EventBusName: !Ref EventsEventBus1
+      Targets:
+        - Arn: !Ref SNSTopic1
+          Id: "NotificationDestinationTopic"
+          InputTransformer:
+            InputPathsMap:
+              Account_ID: "$.detail.accountId"
+              Finding_ID: "$.detail.id"
+              Finding_Type: "$.detail.type"
+              Finding_description: "$.detail.description"
+              Resource_Type: "$.detail.resource.resourceType"
+              region: "$.region"
+              severity: "$.detail.severity"
+            InputTemplate: |
+              "AWS <Account_ID> has a severity <severity> GuardDuty finding type <Finding_Type> in the <region> region."
+              "Resource_Type:<Resource_Type>"
+              "Finding Description:"
+              "<Finding_description>. "
+              "For more details open the GuardDuty console at https://<region>.console.aws.amazon.com/guardduty/home?region=<region>#/findings?search=id%3D<Finding_ID>&macros=current"
+      EventPattern: !Sub |
+        {
+            "source": [
+                "aws.guardduty"
+            ],
+            "detail-type": [
+                "GuardDuty Finding"
+            ],
+            "detail": {
+                "severity": [
+                    { "numeric": [ ">=", ${Severity} ] }
+                ]
+            }
+        }
+  # ------------------------------------------------------------#
+  # SNS
+  # ------------------------------------------------------------#
+  SNSTopic1:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: !Sub ${ProjectName}-${AWS::Region}-snstopic-guardduty-notification
+      TopicName: !Sub ${ProjectName}-${AWS::Region}-snstopic-guardduty-notification
+  SNSTopicPolicy1:
+    Type: "AWS::SNS::TopicPolicy"
+    Properties:
+      Topics:
+        - !Ref SNSTopic1
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "EventBridgeRule"
+            Effect: "Allow"
+            Principal:
+              Service: "events.amazonaws.com"
+            Action: "sns:Publish"
+            Resource: !Ref SNSTopic1
+
+  # ------------------------------------------------------------#
+  # Sender for IAM Role
+  # ------------------------------------------------------------#
+  IAMRole1:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/service-role/"
+      RoleName: !Sub ${ProjectName}-role-eventbridge-push-event-eventbus
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "events.amazonaws.com"
+            Action: "sts:AssumeRole"
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - !Ref IAMManagedPolicy1
+  IAMManagedPolicy1:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub ${ProjectName}-policy-eventbridge-push-event-eventbus
+      Path: "/service-role/"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "events:PutEvents"
+            Resource:
+              - !GetAtt EventsEventBus1.Arn
+
+Outputs:
+  ReceiverCustomEventBusARNOutput:
+    Description: "This value is used in the stack set  parameters."
+    Value: !GetAtt EventsEventBus1.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ReceiverCustomEventBusARN
+  SenderRoleARNOutput:
+    Description: "This value is used in the stack set  parameters."
+    Value: !GetAtt IAMRole1.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-SenderRoleARN
